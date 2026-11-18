@@ -1,0 +1,19 @@
+{
+  "model_family": "hist_gradient_boosting",
+  "accuracy": 0.9081885133758333,
+  "precision": 0.4964311859443631,
+  "recall": 0.2878594927305529,
+  "macro_f1": 0.6574662387978256,
+  "log_loss": 0.17402816771154694,
+  "fit_seconds": 8.622312799998326,
+  "student_test_inference_seconds": 0.20062950000283308,
+  "train_labelled_rows": 1786962,
+  "student_test_labelled_rows": 206118,
+  "student_test_unknown_rows": 3003,
+  "student_test_trips": 10,
+  "evaluator_test_used": false,
+  "observation_top1_accuracy": 0.5236654993101985,
+  "observations_with_known_positive": 18846,
+  "observations_with_known_labels": 18846,
+  "candidate_miss_rate": 0.0
+}

@@ -1,0 +1,30 @@
+{
+  "feature_columns": [
+    "perp_dist",
+    "proj_frac"
+  ],
+  "target_column": "is_match",
+  "group_column": "trip_id",
+  "candidate_key": [
+    "trip_id",
+    "observation_idx",
+    "candidate_arc_id"
+  ],
+  "input_columns": [
+    "trip_id",
+    "observation_idx",
+    "t",
+    "candidate_arc_id",
+    "perp_dist",
+    "proj_frac",
+    "is_match"
+  ],
+  "label_mapping": {
+    "1": "positive",
+    "0": "negative",
+    "-1": "unlabelled"
+  },
+  "unlabelled_policy": "Exclude -1 from supervised fitting and labelled metrics; retain for inference.",
+  "label_alignment": "Upstream Person A route-to-GPS alignment; candidate radius 50m; label distance threshold 50m.",
+  "feature_policy": "Initial baseline uses perp_dist and proj_frac only. IDs and raw timestamp are excluded."
+}

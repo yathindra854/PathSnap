@@ -6,7 +6,7 @@ Usage (from repo root):
   python scripts/02_build_candidates.py --partition train --radius 50 --limit 5   # quick v0
 
 Writes:
-  data/processed/candidates_<partition>.parquet
+  data/processed/candidates_<partition>.csv
   reports/tables/candidate_stats_<partition>_r<radius>.csv  (per-trip miss rate etc.)
 """
 import argparse
@@ -73,8 +73,10 @@ def main():
           f"mean candidates/point {stats['mean_candidates'].mean():.1f}")
 
     if not args.no_save:
-        out = ROOT / f"data/processed/candidates_{args.partition}.parquet"
-        pd.concat(tables, ignore_index=True).to_parquet(out, index=False)
+        out_dir = ROOT / "data/processed"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / f"candidates_{args.partition}.csv"
+        pd.concat(tables, ignore_index=True).to_csv(out, index=False)
         print(f"saved {out}")
 
 
