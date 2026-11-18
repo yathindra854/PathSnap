@@ -1,0 +1,11 @@
+trip_id,status,input_points,output_points,mode,time_seconds,error
+00000000,PASS,10,10,hgb_viterbi,1.996,
+00000007,PASS,10,10,hgb_viterbi,0.205,
+00000009,PASS,10,10,hgb_viterbi,0.403,
+00000040,PASS,10,10,hgb_viterbi,0.309,
+00000052,PASS,10,10,hgb_viterbi,0.217,
+00000056,PASS,10,10,hgb_viterbi,0.834,
+00000065,PASS,10,10,hgb_viterbi,0.34,
+00000076,PASS,10,10,hgb_viterbi,1.446,
+00000077,PASS,10,10,hgb_viterbi,0.155,
+00000091,PASS,10,10,hgb_viterbi,0.425,

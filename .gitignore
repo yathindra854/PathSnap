@@ -21,3 +21,6 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local model inference environment
+.venv-model/

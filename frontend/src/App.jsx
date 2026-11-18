@@ -3,7 +3,6 @@ import {
   Activity,
   Map,
   Route,
-  Upload,
   Play,
   Navigation,
   Clock3,
@@ -22,11 +21,9 @@ import {
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 
-const samplePoints = [
-  { lat: 10.5276, lon: 76.2144, timestamp: 1000 },
-  { lat: 10.5280, lon: 76.2150, timestamp: 1005 },
-  { lat: 10.5285, lon: 76.2158, timestamp: 1010 },
-];
+// Backend address. Laptop 2 sets this in frontend/.env.local, e.g.
+// VITE_API_URL=http://192.168.1.23:8000   (the IP of the laptop running the API)
+const API_URL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 
 function FitRoute({ points }) {
   const map = useMap();
@@ -41,100 +38,101 @@ function FitRoute({ points }) {
   return null;
 }
 
-function RouteMap({ rawPoints, matchedPoints }) {
-  const defaultCenter = [10.5276, 76.2144];
+function RouteMap({ rawPoints, segments, start, end }) {
+  const defaultCenter = [30.3165, 78.0322];
 
   return (
     <MapContainer
       center={defaultCenter}
-      zoom={15}
+      zoom={13}
       scrollWheelZoom={true}
       className="leaflet-map"
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; OpenStreetMap contributors'
+        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
 
       {rawPoints?.length > 0 && (
         <>
           <FitRoute points={rawPoints} />
 
-          <Polyline
-            positions={rawPoints.map((point) => [point.lat, point.lon])}
-            pathOptions={{
-              color: "#38a8ff",
-              weight: 4,
-              opacity: 0.9,
-              dashArray: "8 8",
-            }}
-          />
-
           {rawPoints.map((point, index) => (
             <CircleMarker
               key={`raw-${index}`}
               center={[point.lat, point.lon]}
-              radius={6}
+              radius={3}
               pathOptions={{
                 color: "#38a8ff",
                 fillColor: "#38a8ff",
-                fillOpacity: 1,
+                fillOpacity: 0.8,
+                weight: 1,
               }}
             >
               <Popup>
-                <strong>GPS Point {index + 1}</strong>
+                <strong>GPS point {index + 1}</strong>
                 <br />
-                Lat: {point.lat}
-                <br />
-                Lon: {point.lon}
+                {point.lat.toFixed(5)}, {point.lon.toFixed(5)}
               </Popup>
             </CircleMarker>
           ))}
         </>
       )}
 
-      {matchedPoints?.length > 0 && (
-        <>
-          <Polyline
-            positions={matchedPoints.map((point) => [point.lat, point.lon])}
-            pathOptions={{
-              color: "#b18aff",
-              weight: 6,
-              opacity: 1,
-            }}
-          />
+      {segments?.map((seg, index) => (
+        <Polyline
+          key={`seg-${index}`}
+          positions={seg.map((point) => [point.lat, point.lon])}
+          pathOptions={{ color: "#b18aff", weight: 6, opacity: 0.95 }}
+        />
+      ))}
 
-          {matchedPoints.map((point, index) => (
-            <CircleMarker
-              key={`matched-${index}`}
-              center={[point.lat, point.lon]}
-              radius={5}
-              pathOptions={{
-                color: "#d3b8ff",
-                fillColor: "#b18aff",
-                fillOpacity: 1,
-              }}
-            >
-              <Popup>
-                <strong>Matched Point {index + 1}</strong>
-                <br />
-                Lat: {point.lat}
-                <br />
-                Lon: {point.lon}
-              </Popup>
-            </CircleMarker>
-          ))}
-        </>
+      {start && (
+        <CircleMarker
+          center={[start.lat, start.lon]}
+          radius={9}
+          pathOptions={{ color: "#ffffff", fillColor: "#22c55e", fillOpacity: 1, weight: 3 }}
+        >
+          <Popup><strong>Start (A)</strong></Popup>
+        </CircleMarker>
+      )}
+      {end && (
+        <CircleMarker
+          center={[end.lat, end.lon]}
+          radius={9}
+          pathOptions={{ color: "#ffffff", fillColor: "#ef4444", fillOpacity: 1, weight: 3 }}
+        >
+          <Popup><strong>End (B)</strong></Popup>
+        </CircleMarker>
       )}
     </MapContainer>
   );
 }
 
 function App() {
-  const [tripId, setTripId] = useState("demo_trip_001");
+  const [trips, setTrips] = useState([]);
+  const [tripId, setTripId] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [online, setOnline] = useState(null);
+
+  useEffect(() => {
+    async function loadTrips() {
+      try {
+        const response = await fetch(`${API_URL}/api/v1/trips`);
+        if (!response.ok) throw new Error(`API error: ${response.status}`);
+        const data = await response.json();
+        setTrips(data.trips);
+        if (data.trips.length > 0) setTripId(data.trips[0].trip_id);
+        setOnline(true);
+      } catch {
+        setOnline(false);
+        setError(`Cannot reach the PathSnap API at ${API_URL}`);
+      }
+    }
+    loadTrips();
+  }, []);
 
   async function runPrediction() {
     setLoading(true);
@@ -142,31 +140,29 @@ function App() {
     setResult(null);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/v1/predict", {
+      const response = await fetch(`${API_URL}/api/v1/predict`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          trip_id: tripId,
-          points: samplePoints,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trip_id: tripId }),
       });
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
       }
 
-      const data = await response.json();
-      setResult(data);
+      setResult(await response.json());
+      setOnline(true);
     } catch (err) {
+      setOnline(false);
       setError(err.message || "Unable to connect to PathSnap API");
     } finally {
       setLoading(false);
     }
   }
 
-  const matchedPoints = result?.matched_points ?? [];
+  const summary = result?.summary;
+  const evaluation = result?.evaluation;
+  const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
 
   return (
     <div className="app-shell">
@@ -216,7 +212,7 @@ function App() {
 
           <div className="top-status">
             <span className="status-dot" />
-            API connected locally
+            {online === null ? "Checking API..." : online ? `API connected (${API_URL})` : "API unreachable"}
           </div>
         </header>
 
@@ -242,8 +238,8 @@ function App() {
               <Activity size={20} />
             </div>
             <span className="stat-label">SYSTEM STATUS</span>
-            <h3>Operational</h3>
-            <span className="stat-foot">API responding</span>
+            <h3>{online === null ? "Checking" : online ? "Operational" : "Offline"}</h3>
+            <span className="stat-foot">{online ? "API responding" : "Check the API address"}</span>
           </div>
 
           <div className="stat-card">
@@ -289,25 +285,23 @@ function App() {
 
             <label className="field-label">Trip ID</label>
 
-            <input
+            <select
               className="trip-input"
               value={tripId}
               onChange={(e) => setTripId(e.target.value)}
-              placeholder="Enter trip ID"
-            />
-
-            <div className="upload-box">
-              <Upload size={24} />
-              <strong>Dataset integration coming next</strong>
-              <span>
-                Trip selection and file upload will be connected here.
-              </span>
-            </div>
+              disabled={trips.length === 0}
+            >
+              {trips.map((t) => (
+                <option key={t.trip_id} value={t.trip_id}>
+                  Trip {t.trip_id} ({t.gps_points} points)
+                </option>
+              ))}
+            </select>
 
             <button
               className="run-button"
               onClick={runPrediction}
-              disabled={loading || !tripId.trim()}
+              disabled={loading || !tripId}
             >
               {loading ? (
                 <>
@@ -317,13 +311,13 @@ function App() {
               ) : (
                 <>
                   <Play size={17} />
-                  Run mock prediction
+                  Reconstruct route
                 </>
               )}
             </button>
 
             <p className="helper-text">
-              Currently using sample GPS points for API integration testing.
+              Runs the trained classifier and HMM decoder on the selected trip.
             </p>
 
             {error && <div className="error-message">{error}</div>}
@@ -353,8 +347,10 @@ function App() {
 
             <div className="map-container">
               <RouteMap
-                rawPoints={result ? samplePoints : []}
-                matchedPoints={matchedPoints}
+                rawPoints={result?.gps_points ?? []}
+                segments={result?.route_segments ?? []}
+                start={result?.start}
+                end={result?.end}
               />
             </div>
 
@@ -382,7 +378,38 @@ function App() {
               Your prediction results will appear here after you run the engine.
             </div>
           ) : (
-            <pre className="json-output">{JSON.stringify(result, null, 2)}</pre>
+            <>
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <span className="stat-label">ROUTE LENGTH</span>
+                  <h3>{summary.predicted_route_length_km.toFixed(2)} km</h3>
+                  <span className="stat-foot">{summary.predicted_route_arcs} road arcs</span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">POINT ACCURACY</span>
+                  <h3>{pct(evaluation?.point_accuracy_hmm)}</h3>
+                  <span className="stat-foot">
+                    Classifier only: {pct(evaluation?.point_accuracy_classifier_only)}
+                  </span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">ROUTE ARC F1</span>
+                  <h3>{pct(evaluation?.route_arc_f1)}</h3>
+                  <span className="stat-foot">
+                    P {pct(evaluation?.route_arc_precision)} · R {pct(evaluation?.route_arc_recall)}
+                  </span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">TIME</span>
+                  <h3>{result.timing?.total_s != null ? `${result.timing.total_s.toFixed(2)} s` : "—"}</h3>
+                  <span className="stat-foot">{result.model?.classifier ?? "HGB + Viterbi"}</span>
+                </div>
+              </div>
+              <details>
+                <summary>Raw response</summary>
+                <pre className="json-output">{JSON.stringify({ ...result, gps_points: undefined, route_segments: undefined, matched_points: undefined, snapped_points: undefined }, null, 2)}</pre>
+              </details>
+            </>
           )}
         </section>
 
