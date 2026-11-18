@@ -59,7 +59,15 @@ def make_map(trip: Trip, predicted_arcs=None, max_gps_points: int = 3000,
              show_network: bool = True) -> folium.Map:
     """Interactive map of one trip with toggleable layers."""
     tr = trip.track
-    m = folium.Map(tiles="OpenStreetMap", control_scale=True)
+    m = folium.Map(tiles=None, control_scale=True)
+    folium.TileLayer(
+        tiles="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        attr="&copy; OpenStreetMap contributors &copy; CARTO",
+        name="CARTO light", max_zoom=20).add_to(m)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        attr="Tiles &copy; Esri",
+        name="Esri streets", max_zoom=19).add_to(m)
     m.fit_bounds([[tr["lat"].min(), tr["lon"].min()], [tr["lat"].max(), tr["lon"].max()]])
     legend = {}
 
