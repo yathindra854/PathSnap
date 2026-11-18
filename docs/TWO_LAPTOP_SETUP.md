@@ -23,7 +23,7 @@ Both must be on the same Wi-Fi / hotspot.
    If it hangs, it is the firewall or a different network (some campus Wi-Fi blocks device-to-device traffic; use a phone hotspot).
 3. In `frontend/`, create `.env.local` containing: `VITE_API_URL=http://<LAPTOP-1-IP>:8000`
 4. `npm install`, then `npm run dev`, open the printed `http://localhost:5173`.
-5. Pick a trip, press **Reconstruct route**. The map shows the GPS trace (blue), the matched route (purple), start (green) and end (red).
+5. Pick a trip from the dropdown; the route is computed immediately. The map shows GPS observations (blue), the predicted route (red), and start (green) and end (black). Use the checkboxes bottom-left to toggle layers.
 
 ## Screenshots needed for the deliverables
 
