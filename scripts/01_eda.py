@@ -1,116 +1,205 @@
-"""Step 1: dataset exploration for PathSnap.
+"""Pipeline step 01: exploratory data analysis. Owner: A
 
-Usage: python scripts/01_eda.py <data_root> <out_dir>
-  data_root: folder that contains train/ and student_test/ (the 'Student folder')
-  out_dir:   repo root; tables go to reports/tables, figures to reports/figures
+Usage (from repo root):
+  python scripts/01_eda.py                         # train + student_test, tables + plots
+  python scripts/01_eda.py --maps 00000048 00000093  # also save Folium maps for these train trips
 
-Only the 80 train and 10 student-test trips are read. Evaluator data is never touched.
-Distances use a local equirectangular projection (metres) per trip, which is
-accurate at city scale; pyproj/UTM can replace it later.
+Writes:
+  reports/tables/eda_trips_<partition>.csv   one row per trip (counts, gaps, speeds, connectivity)
+  reports/tables/eda_missing_values.csv      missing / invalid values per partition and file
+  reports/figures/eda_*.png                  plots for report section 2
+  reports/figures/maps/map_<trip>.html       Folium maps (section 6)
+
+Only train and student_test are used. Evaluator trips are not touched.
 """
-import sys, os, glob
-import numpy as np
-import pandas as pd
+import argparse
+import sys
+from pathlib import Path
 
-R = 6371000.0
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+import networkx as nx  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
-def project(lon, lat, lon0, lat0):
-    x = np.radians(lon - lon0) * R * np.cos(np.radians(lat0))
-    y = np.radians(lat - lat0) * R
-    return x, y
+from pathsnap.data.loader import list_trips, load_trip, project_trip  # noqa: E402
 
-
-def components(n, edges):
-    """Union-find over undirected edges. Returns component label per node."""
-    parent = np.arange(n)
-
-    def find(a):
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]
-            a = parent[a]
-        return a
-
-    for a, b in edges:
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[ra] = rb
-    return np.array([find(i) for i in range(n)])
+TABLES = ROOT / "reports/tables"
+FIGS = ROOT / "reports/figures"
+PARTITIONS = ["train", "student_test"]
 
 
-def load_trip(d):
-    t = os.path.basename(d)
-    trk = pd.read_csv(f"{d}/{t}.track", sep=r"\s+", header=None, names=["lon", "lat", "t"])
-    nodes = pd.read_csv(f"{d}/{t}.nodes", sep=r"\s+", header=None, names=["lon", "lat"])
-    arcs = pd.read_csv(f"{d}/{t}.arcs", sep=r"\s+", header=None, names=["u", "v"])
-    route = pd.read_csv(f"{d}/{t}.route", header=None, names=["arc"])["arc"].to_numpy()
-    return t, trk, nodes, arcs, route
+def trip_summary(trip) -> dict:
+    tr = trip.track
+    t = tr["t"].to_numpy()
+    dt = np.diff(t)
+    step = np.hypot(np.diff(tr["x"].to_numpy()), np.diff(tr["y"].to_numpy()))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        speed = np.where(dt > 0, step / dt, np.nan)          # m/s
+
+    # road network as a directed graph
+    g = nx.DiGraph()
+    g.add_nodes_from(range(len(trip.nodes)))
+    g.add_edges_from(trip.arcs[["from_node", "to_node"]].to_numpy())
+    wcc = [len(c) for c in nx.weakly_connected_components(g)]
+    isolated = sum(1 for n in g.nodes if g.degree(n) == 0)
+
+    # does each route arc start where the previous one ended?
+    r = trip.route
+    f, to = trip.arcs["from_node"].to_numpy(), trip.arcs["to_node"].to_numpy()
+    route_breaks = int((to[r[:-1]] != f[r[1:]]).sum()) if r is not None and len(r) > 1 else 0
+
+    return {
+        "trip_id": trip.trip_id,
+        "epsg": trip.epsg,
+        "centre_lon": round(tr["lon"].mean(), 4),
+        "centre_lat": round(tr["lat"].mean(), 4),
+        "n_points": len(tr),
+        "duration_s": float(t[-1] - t[0]),
+        "t_start": float(t[0]),
+        "gaps_gt1s": int((dt > 1).sum()),
+        "gaps_gt5s": int((dt > 5).sum()),
+        "gaps_gt30s": int((dt > 30).sum()),
+        "max_gap_s": float(dt.max()) if len(dt) else 0.0,
+        "share_1s_steps": float((dt == 1).mean()) if len(dt) else np.nan,
+        "non_increasing_t": int((dt <= 0).sum()),
+        "speed_median_ms": float(np.nanmedian(speed)),
+        "speed_p99_ms": float(np.nanpercentile(speed, 99)),
+        "n_speed_gt50ms": int((speed > 50).sum()),        # > 180 km/h: likely GPS jump
+        "extent_x_km": float(np.ptp(tr["x"]) / 1000),
+        "extent_y_km": float(np.ptp(tr["y"]) / 1000),
+        "path_length_km": float(np.nansum(step) / 1000),
+        "n_nodes": len(trip.nodes),
+        "n_arcs": len(trip.arcs),
+        "isolated_nodes": isolated,
+        "n_components": len(wcc),
+        "largest_component_share": max(wcc) / len(trip.nodes),
+        "n_route_arcs": 0 if r is None else len(r),
+        "route_breaks": route_breaks,
+    }
 
 
-def summarise(part, d):
-    t, trk, nodes, arcs, route = load_trip(d)
-    n_nodes, n_arcs = len(nodes), len(arcs)
-    lon0, lat0 = nodes.lon.mean(), nodes.lat.mean()
-
-    # GPS quality
-    dt = np.diff(trk.t.to_numpy())
-    gx, gy = project(trk.lon.to_numpy(), trk.lat.to_numpy(), lon0, lat0)
-    step = np.hypot(np.diff(gx), np.diff(gy))
-    speed = step / np.where(dt > 0, dt, np.nan)
-    missing = int(trk.isna().sum().sum())
-    bad_coord = int(((trk.lon.abs() > 180) | (trk.lat.abs() > 90)).sum())
-
-    # Network
-    nx_, ny_ = project(nodes.lon.to_numpy(), nodes.lat.to_numpy(), lon0, lat0)
-    arc_ok = bool(((arcs.u >= 0) & (arcs.u < n_nodes) & (arcs.v >= 0) & (arcs.v < n_nodes)).all())
-    comp = components(n_nodes, arcs[["u", "v"]].to_numpy())
-    comp_sizes = np.bincount(np.unique(comp, return_inverse=True)[1])
-    deg = np.bincount(np.r_[arcs.u, arcs.v], minlength=n_nodes)
-    arc_len = np.hypot(nx_[arcs.v] - nx_[arcs.u], ny_[arcs.v] - ny_[arcs.u])
-    # reverse arcs present? (are arcs directed both ways)
-    pairs = set(zip(arcs.u, arcs.v))
-    both = np.mean([(v, u) in pairs for u, v in pairs])
-
-    # Reference route
-    route_ok = bool(((route >= 0) & (route < n_arcs)).all())
-    r = arcs.iloc[route[route < n_arcs]]
-    consecutive = float(np.mean(r.v.to_numpy()[:-1] == r.u.to_numpy()[1:])) if len(r) > 1 else np.nan
-    route_len = float(arc_len[route[route < n_arcs]].sum())
-
-    # GPS-to-network: distance from GPS point to nearest node (cheap proxy), in metres
-    sample = np.linspace(0, len(trk) - 1, min(len(trk), 300)).astype(int)
-    dn = np.array([np.min(np.hypot(nx_ - gx[i], ny_ - gy[i])) for i in sample])
-
-    return dict(
-        partition=part, trip=t, gps_points=len(trk), duration_s=float(trk.t.iloc[-1] - trk.t.iloc[0]),
-        missing_vals=missing, bad_coords=bad_coord,
-        dt_eq_1s_pct=100 * float(np.mean(dt == 1)), dt_max_s=float(dt.max()), n_gaps_gt5s=int((dt > 5).sum()),
-        non_monotonic_t=int((dt <= 0).sum()),
-        step_median_m=float(np.nanmedian(step)), step_max_m=float(np.nanmax(step)),
-        speed_median_ms=float(np.nanmedian(speed)), speed_p99_ms=float(np.nanpercentile(speed, 99)),
-        lon_min=trk.lon.min(), lon_max=trk.lon.max(), lat_min=trk.lat.min(), lat_max=trk.lat.max(),
-        extent_x_km=float((gx.max() - gx.min()) / 1000), extent_y_km=float((gy.max() - gy.min()) / 1000),
-        nodes=n_nodes, arcs=n_arcs, arc_ids_valid=arc_ok,
-        components=len(comp_sizes), largest_comp_pct=100 * float(comp_sizes.max() / n_nodes),
-        isolated_nodes=int((deg == 0).sum()), deg_mean=float(deg.mean()), deg_max=int(deg.max()),
-        arc_len_median_m=float(np.median(arc_len)), arcs_bidirectional_pct=100 * float(both),
-        route_arcs=len(route), route_ids_valid=route_ok, route_unique_arcs=int(len(np.unique(route))),
-        route_consecutive_pct=100 * consecutive, route_len_km=route_len / 1000,
-        gps_to_nearest_node_median_m=float(np.median(dn)), gps_to_nearest_node_p95_m=float(np.percentile(dn, 95)),
-    )
-
-
-def main(data_root, out):
+def missing_values(trip_dirs, partition) -> list[dict]:
     rows = []
-    for part in ["train", "student_test"]:
-        for d in sorted(glob.glob(f"{data_root}/{part}/*")):
-            rows.append(summarise(part, d))
-            print(part, rows[-1]["trip"], rows[-1]["gps_points"], rows[-1]["nodes"], flush=True)
-    df = pd.DataFrame(rows)
-    os.makedirs(f"{out}/reports/tables", exist_ok=True)
-    df.to_csv(f"{out}/reports/tables/dataset_inventory.csv", index=False)
-    print("saved inventory", df.shape)
+    for ext, cols in [("track", 3), ("nodes", 2), ("arcs", 2), ("route", 1)]:
+        missing_files = n_rows = n_nan = n_bad = 0
+        for d in trip_dirs:
+            p = d / f"{d.name}.{ext}"
+            if not p.exists():
+                missing_files += 1
+                continue
+            df = pd.read_csv(p, sep=r"\s+", header=None)
+            n_rows += len(df)
+            n_nan += int(df.isna().sum().sum())
+            if df.shape[1] != cols:
+                n_bad += len(df)
+            elif ext in ("track", "nodes"):
+                lon, lat = df[0], df[1]
+                n_bad += int(((lon.abs() > 180) | (lat.abs() > 90) | ((lon == 0) & (lat == 0))).sum())
+        rows.append({"partition": partition, "file": ext, "trips": len(trip_dirs),
+                     "missing_files": missing_files, "rows": n_rows,
+                     "nan_values": n_nan, "invalid_rows": n_bad})
+    return rows
+
+
+def plots(summ: pd.DataFrame, gaps: dict, speeds: dict):
+    FIGS.mkdir(parents=True, exist_ok=True)
+
+    # 1. points per trip
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for p, g in summ.groupby("partition"):
+        ax.hist(g["n_points"], bins=30, alpha=0.6, label=f"{p} ({len(g)} trips)")
+    ax.set(xlabel="GPS points per trip", ylabel="Trips", title="Trip length")
+    ax.legend(); fig.tight_layout(); fig.savefig(FIGS / "eda_points_per_trip.png", dpi=150); plt.close(fig)
+
+    # 2. sampling interval distribution
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for p, dt in gaps.items():
+        ax.hist(np.clip(dt, 0, 30), bins=np.arange(0, 31) - 0.5, alpha=0.6, label=p, log=True)
+    ax.set(xlabel="Seconds between consecutive points (clipped at 30)", ylabel="Count (log)",
+           title="GPS sampling intervals")
+    ax.legend(); fig.tight_layout(); fig.savefig(FIGS / "eda_sampling_intervals.png", dpi=150); plt.close(fig)
+
+    # 3. speed distribution
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for p, s in speeds.items():
+        ax.hist(np.clip(s[~np.isnan(s)] * 3.6, 0, 200), bins=80, alpha=0.6, label=p, log=True)
+    ax.set(xlabel="Speed between consecutive points (km/h, clipped at 200)", ylabel="Count (log)",
+           title="Implied vehicle speed")
+    ax.legend(); fig.tight_layout(); fig.savefig(FIGS / "eda_speed.png", dpi=150); plt.close(fig)
+
+    # 4. where the trips are
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    for p, g in summ.groupby("partition"):
+        ax.scatter(g["centre_lon"], g["centre_lat"], s=18, alpha=0.7, label=p)
+    ax.set(xlabel="Longitude", ylabel="Latitude", title="Trip locations (centre of each trajectory)")
+    ax.legend(); ax.grid(alpha=0.3); fig.tight_layout(); fig.savefig(FIGS / "eda_trip_locations.png", dpi=150); plt.close(fig)
+
+    # 5. network size vs track length
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for p, g in summ.groupby("partition"):
+        ax.scatter(g["n_points"], g["n_arcs"], s=18, alpha=0.7, label=p)
+    ax.set(xscale="log", yscale="log", xlabel="GPS points", ylabel="Road arcs",
+           title="Road-network size vs trajectory length")
+    ax.legend(); fig.tight_layout(); fig.savefig(FIGS / "eda_network_size.png", dpi=150); plt.close(fig)
+
+    # 6. connectivity
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for p, g in summ.groupby("partition"):
+        ax.hist(g["largest_component_share"], bins=20, alpha=0.6, label=p)
+    ax.set(xlabel="Share of nodes in largest connected component", ylabel="Trips",
+           title="Road-network connectivity")
+    ax.legend(); fig.tight_layout(); fig.savefig(FIGS / "eda_connectivity.png", dpi=150); plt.close(fig)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--maps", nargs="*", default=[], help="train trip ids to save Folium maps for")
+    args = ap.parse_args()
+    TABLES.mkdir(parents=True, exist_ok=True)
+
+    all_rows, miss_rows, gaps, speeds = [], [], {}, {}
+    for part in PARTITIONS:
+        dirs = list_trips(ROOT / "data/raw" / part)
+        miss_rows += missing_values(dirs, part)
+        rows, g_all, s_all = [], [], []
+        for d in dirs:
+            trip = project_trip(load_trip(d))
+            rows.append(trip_summary(trip))
+            tr = trip.track
+            dt = np.diff(tr["t"].to_numpy())
+            step = np.hypot(np.diff(tr["x"].to_numpy()), np.diff(tr["y"].to_numpy()))
+            g_all.append(dt)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                s_all.append(np.where(dt > 0, step / dt, np.nan))
+        df = pd.DataFrame(rows)
+        df.to_csv(TABLES / f"eda_trips_{part}.csv", index=False)
+        df["partition"] = part
+        all_rows.append(df)
+        gaps[part], speeds[part] = np.concatenate(g_all), np.concatenate(s_all)
+        print(f"{part}: {len(df)} trips, {df['n_points'].sum()} points, "
+              f"{df['epsg'].nunique()} UTM zones, "
+              f"{(df['gaps_gt5s'] > 0).sum()} trips with gaps > 5 s, "
+              f"{(df['route_breaks'] > 0).sum()} trips with route breaks")
+
+    summ = pd.concat(all_rows, ignore_index=True)
+    pd.DataFrame(miss_rows).to_csv(TABLES / "eda_missing_values.csv", index=False)
+    plots(summ, gaps, speeds)
+    print(f"tables -> {TABLES}\nfigures -> {FIGS}")
+
+    if args.maps:
+        from pathsnap.viz.folium_maps import make_map
+        (FIGS / "maps").mkdir(parents=True, exist_ok=True)
+        for tid in args.maps:
+            m = make_map(load_trip(ROOT / "data/raw/train" / tid))
+            out = FIGS / "maps" / f"map_{tid}.html"
+            m.save(out)
+            print(f"map -> {out}")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    main()

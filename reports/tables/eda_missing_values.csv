@@ -1,0 +1,9 @@
+partition,file,trips,missing_files,rows,nan_values,invalid_rows
+train,track,80,0,208417,0,0
+train,nodes,80,0,1933485,0,0
+train,arcs,80,0,3876904,0,0
+train,route,80,0,31336,0,0
+student_test,track,10,0,19160,0,0
+student_test,nodes,10,0,90689,0,0
+student_test,arcs,10,0,185041,0,0
+student_test,route,10,0,3477,0,0
