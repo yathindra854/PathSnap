@@ -1,0 +1,26 @@
+# PathSnap project configuration (fill in during Phase 0)
+data:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  partitions:
+    train_trips: 80
+    student_test_trips: 10
+    evaluator_test_trips: 10   # never used for training, tuning or selection
+
+candidates:
+  radius_m: null        # TODO: decide in Phase 0
+  crs: null             # TODO: per-trip UTM zone (see Dataset Exploration §5)
+
+cv:
+  scheme: GroupKFold    # group by trip_id to prevent leakage
+  n_splits: 5
+  random_seed: 42
+
+hmm:
+  transition_model: null   # TODO
+  emission_model: null     # TODO
+
+optimisation:
+  sampler: TPE
+  n_trials: null           # TODO
+  objective: cv_macro_f1
