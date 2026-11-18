@@ -41,7 +41,19 @@ Place the course-provided `Student folder/` contents under `data/raw/`.
 Raw data is git-ignored.
 
 ## Running
-TBD. Commands will be added as each stage is implemented.
+Step 02 — candidate table (label alignment + candidate arcs within R metres):
+```bash
+python scripts/02_build_candidates.py --partition train --radius 50 --limit 5   # quick v0
+python scripts/02_build_candidates.py --partition train --radius 50
+python scripts/02_build_candidates.py --partition student_test --radius 50
+```
+Outputs `data/processed/candidates_<partition>.parquet` (git-ignored) and
+`reports/tables/candidate_stats_<partition>_r<R>.csv`.
+
+Candidate table columns: `trip_id, point_idx, t, arc_id, perp_dist, proj_frac, label`
+(`label`: 1 = reference arc, 0 = other candidate, -1 = point not covered by the reference route).
+
+Other steps: TBD.
 
 ## Integrity
 Evaluator-test trips and labels are never used for training, tuning, or

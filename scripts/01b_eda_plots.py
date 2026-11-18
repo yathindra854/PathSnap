@@ -12,8 +12,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(__file__))
 from importlib import import_module
 
-eda = import_module("01_eda")
-
+eda = import_module("01a_eda_inventory")
 
 def main(data_root, repo, trip="00000046", part="train"):
     fig_dir = f"{repo}/reports/figures"
