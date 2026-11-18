@@ -1,0 +1,20 @@
+{
+  "baseline_family": "hist_gradient_boosting",
+  "best_value_macro_f1_groupkfold": 0.7429797323956877,
+  "best_params": {
+    "learning_rate": 0.0264891626801987,
+    "max_iter": 150,
+    "max_leaf_nodes": 16,
+    "l2_regularization": 3.5204810455260365,
+    "min_samples_leaf": 20
+  },
+  "n_trials_total": 12,
+  "optimisation_seconds_this_run": 26.442089999996824,
+  "sampler": "Optuna TPESampler",
+  "objective": "mean sampled GroupKFold macro-F1 on training trips only",
+  "folds": 5,
+  "training_sample_per_class_per_fold": 5000,
+  "validation_sample_per_fold": 20000,
+  "student_test_used_for_tuning": false,
+  "evaluator_test_used": false
+}
