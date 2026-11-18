@@ -29,6 +29,7 @@ def main():
     ap.add_argument("--partition", choices=["train", "student_test"], required=True)
     ap.add_argument("--radius", type=float, default=50.0)
     ap.add_argument("--window", type=int, default=5, help="label alignment look-ahead")
+    ap.add_argument("--label-dist", type=float, default=50.0)
     ap.add_argument("--limit", type=int, default=None, help="only first N trips (v0)")
     ap.add_argument("--no-save", action="store_true", help="stats only, skip parquet")
     args = ap.parse_args()
@@ -40,7 +41,7 @@ def main():
         trip = project_trip(load_trip(d))
         true_arc, align_dist = align_labels(trip.track[["x", "y"]].to_numpy(),
                                             trip.route, trip.arc_geoms, args.window,
-                                            max_dist=args.radius)
+                                            max_dist=args.label_dist)
         cands = build_candidates(trip, args.radius, true_arc)
         n = len(trip.track)
         stats.append({
