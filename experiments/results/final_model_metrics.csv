@@ -1,0 +1,2 @@
+model,split,macro_f1,log_loss,top1,train_s,infer_s_per_10k,n_features
+hgb_reduced,student_test,0.8868,0.0998,0.8029,8.53,0.0324,5
