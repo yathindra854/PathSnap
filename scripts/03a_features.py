@@ -65,7 +65,8 @@ def trip_features(trip, c):
 
 
 def main(partition):
-    cands = pd.read_parquet(ROOT / f"data/processed/candidates_{partition}.parquet")
+    pq = ROOT / f"data/processed/candidates_{partition}.parquet"
+    cands = pd.read_parquet(pq) if pq.exists() else pd.read_csv(pq.with_suffix(".csv"), dtype={"trip_id": str})
     cands["trip_id"] = cands["trip_id"].astype(str).str.zfill(8)
     by = {k: v for k, v in cands.groupby("trip_id")}
     parts = []

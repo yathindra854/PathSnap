@@ -81,6 +81,142 @@ Rules:
   - Sweep 30, 50, 75 and 100 m on train only, and record the results.
 - **Confirmation:** chosen by the team member directing the work. The rest of the team should confirm before training starts.
 
+## D-008: Model family for candidate classification
+- **Date:** 2026-11-18
+- **Owner:** B (with C)
+- **Status:** Accepted (selected on CV only; student-test used as confirmation)
+- **Candidates compared (5 families, GroupKFold by trip, 5 folds on 77 train trips):**
+
+| Model | CV macro-F1 | CV log loss | CV top-1 | Student-test top-1 | Notes |
+|---|---|---|---|---|---|
+| Logistic Regression | 0.860 | 0.143 | 0.792 | 0.794 | baseline, full data |
+| KNN (k=15) | 0.862 | 0.189 | 0.783 | 0.782 | fit on 60k subsample; slowest inference |
+| Random Forest | 0.883 | 0.108 | 0.803 | 0.803 | fit on 300k subsample |
+| HistGradientBoosting | 0.883 | 0.110 | 0.801 | 0.801 | full data, fastest to train among the strong models |
+| Shallow MLP (64, 32) | 0.878 | 0.113 | 0.801 | 0.799 | fit on 150k subsample |
+
+- **Choice:** HistGradientBoosting.
+- **Rationale:** Random Forest and HGB are tied within noise on macro-F1 and top-1. Random Forest has slightly better log loss, but HGB uses all the training data without subsampling, trains in about 8 s, and has more room for Bayesian tuning in step 6. The MLP is a close third. Logistic Regression and KNN are clearly weaker.
+- **Caveat for the report:** the comparison used the 9-feature set. The final model uses the reduced set (D-009).
+- **Evidence:** `experiments/results/model_comparison.csv`.
+
+## D-009: Feature set (reduced to 5)
+- **Date:** 2026-11-18
+- **Owner:** B
+- **Status:** Accepted
+- **Method:** leave-one-feature-out ablation with HGB under the same GroupKFold(5) protocol, then a combined run of the reduced set.
+- **Results (CV macro-F1 / top-1 / log loss):**
+  - Baseline, 9 features: 0.883 / 0.801 / 0.110
+  - Drop `heading_diff`: 0.751 / 0.551 / 0.169. **Critical.**
+  - Drop `proj_frac`: 0.876 / 0.795 / 0.118. Keep.
+  - Drop `perp_rel`: 0.880 / 0.797 / 0.112. Keep.
+  - Drop `speed`: 0.880 / 0.796 / 0.119. Keep.
+  - Drop `perp_dist`: 0.882 / 0.801 / 0.110. Redundant with `perp_rel`.
+  - Drop `rank`, `arc_len`, `log_dt_next`, `n_cands`: no meaningful change.
+  - **Reduced set** (`perp_rel`, `proj_frac`, `heading_diff`, `speed`, `n_cands`): 0.881 / 0.803 / 0.109.
+- **Choice:** the reduced 5-feature set.
+- **Rationale:** the same accuracy with fewer features, and a simpler set to explain in the viva. `heading_diff` is the most important feature: true arcs have a median heading difference of about 23°, versus about 96° for other candidates. The log-loss change is within the range the team should check again after tuning.
+- **Evidence:** `experiments/results/feature_ablation.csv`.
+
+## D-010: Final model result (student-test, reported once)
+- **Date:** 2026-11-18
+- **Owner:** B
+- **Status:** Accepted
+- **Result:** HGB on the reduced set, trained on all 77 train trips, scored on the 10 student-test trips: macro-F1 0.887, log loss 0.100, top-1 0.803.
+- **Artifact:** `artifacts/final_hgb.joblib`. Metrics: `experiments/results/final_model_metrics.csv`.
+- **Caveat:** the student-test set was not used to choose the model or features. The evaluator-test set is still untouched.
+
+## D-011: Person B pipeline vs Phase 1 model (keep Phase 1 model)
+- **Date:** 2026-11-18
+- **Owner:** B
+- **Status:** Accepted
+- **Compared:** the Phase 1 model (`artifacts/final_hgb.joblib`) against the Person B notebook pipeline (`artifacts/person_b/candidate_classifier.joblib`). Both are HistGradientBoosting.
+
+| Student-test (10 trips) | Phase 1 model | Person B model |
+|---|---|---|
+| Features | 5 (`perp_rel`, `proj_frac`, `heading_diff`, `speed`, `n_cands`) | 2 (`perp_dist`, `proj_frac`) |
+| Training data | all labelled rows, 77 trips | 10k balanced rows per CV fold; final fit on 80 trips |
+| Top-1 accuracy (per GPS point) | **0.803** | 0.524 |
+| Macro-F1 | **0.887** | 0.657 |
+| Log loss | **0.100** | 0.174 |
+| Bayesian tuning | not yet | yes, Optuna TPE, 12 trials |
+
+- **Choice:** keep the Phase 1 model as the selected classifier.
+- **Rationale:** it is better on every accuracy measure. The main cause is features, not the algorithm: the Person B model has no heading feature, and dropping `heading_diff` in our ablation (D-009) gave a similar collapse in top-1 (0.551). Person B also trained on the three trips dropped under D-002.
+- **Kept from Person B:** the Bayesian optimisation setup (Optuna TPE, GroupKFold on train only, trial log) and the 5-model baseline. These satisfy the tuning requirement in method, but the tuned parameters were found for 2 features and must be re-searched on the 5-feature set before being reported as the tuned model.
+- **Note for the report:** the two baseline tables are not comparable. Person B's CV scores are on sampled, balanced validation rows, and its model set includes a Decision Tree instead of an MLP.
+- **Evidence:** `experiments/results/final_model_metrics.csv`, `experiments/results/person_b/student_test_metrics.json`.
+
+## D-012: HMM/Viterbi decoder design and settings
+- **Date:** 2026-11-18
+- **Owner:** C
+- **Status:** Accepted
+- **Design:**
+  - Hidden states: the candidate arcs of each GPS point (50 m radius, D-007).
+  - Emission: log of the HGB classifier probability.
+  - Transition: `-beta x hops`, where hops is the number of directed arc-to-arc moves from the previous arc to the next (0 = same arc), searched up to 6 hops. Reversing onto the opposite-direction arc costs an extra `uturn_pen`.
+  - Unreachable or disconnected arcs get a finite penalty (`-beta x 7 - disconnect_pen`) instead of zero probability, so decoding never fails on fragmented networks.
+  - GPS gaps over 300 s restart the chain (D-003).
+- **Results, student-test (10 trips, 18,846 labelled points):**
+
+| Method | Top-1 | Route continuity | Route arc F1 |
+|---|---|---|---|
+| Classifier only | 0.803 | 0.899 | 0.801 |
+| + HMM, default (beta 1, uturn 0) | 0.879 | 0.975 | 0.901 |
+| + HMM, best of grid (beta 4, disconnect 10, uturn 3) | 0.915 | 0.981 | 0.938 |
+
+- **Choice:** beta 4, disconnect penalty 10, U-turn penalty 3.
+- **How chosen:** a 16-setting grid on the student-test trips. The guideline permits optimising decoder parameters on training and student-test data. Because the same trips are used to report the result, the tuned figure is optimistic. The default-setting row is the untuned comparison.
+- **Open:** the best beta is at the edge of the grid. Check higher values on training trips (with out-of-fold classifier probabilities) if time allows. The evaluator set was not used.
+- **Evidence:** `experiments/results/hmm_student_test.csv`, `reports/figures/hmm_vs_classifier.png`.
+
+## D-013: Full metric set for all 5 models (final 5-feature set)
+- **Date:** 2026-11-18
+- **Owner:** B
+- **Status:** Accepted
+- **Why:** the guideline asks for accuracy, precision, recall, F1, confusion matrix, log loss, top-1, route continuity, and training and inference time for every model. The D-008 comparison used the 9-feature set and lacked several of these. All 5 models were rerun on the final 5-feature set.
+- **Protocol:** out-of-fold predictions from GroupKFold(5) by trip on 77 training trips; one refit on all training trips; one score on the 10 student-test trips.
+- **Results:**
+
+| Model | CV macro-F1 (±std) | CV top-1 | CV log loss | Student acc. | Student precision | Student recall | Student macro-F1 | Student log loss | Student top-1 | Route continuity | Train s |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Logistic Regression | 0.843 (±0.029) | 0.766 | 0.152 | 0.952 | 0.860 | 0.841 | 0.850 | 0.147 | 0.769 | 0.890 | 0.8 |
+| KNN | 0.860 (±0.025) | 0.778 | 0.192 | 0.958 | 0.886 | 0.850 | 0.867 | 0.181 | 0.782 | 0.888 | 0.04 |
+| Random Forest | 0.880 (±0.026) | 0.803 | 0.109 | 0.964 | 0.900 | 0.874 | 0.887 | 0.099 | 0.803 | 0.900 | 21.3 |
+| **HistGradientBoosting** | **0.881 (±0.026)** | 0.802 | 0.109 | 0.964 | 0.899 | 0.876 | **0.887** | 0.099 | **0.804** | 0.901 | 5.5 |
+| Shallow MLP | 0.873 (±0.025) | 0.796 | 0.116 | 0.962 | 0.898 | 0.865 | 0.881 | 0.105 | 0.797 | 0.902 | 3.7 |
+
+  Precision and recall are macro-averaged at threshold 0.5. Route continuity is classifier-only (best candidate per point).
+- **Effect on D-008:** none. HistGradientBoosting is still tied with Random Forest at the top and trains about 4x faster.
+- **MLP training curve:** training and validation log loss both fall steadily over 30 epochs with no rise in validation loss, so there is no overfitting. Validation loss is lower than training loss because the held-out trips are easier, not because of leakage.
+- **Evidence:** `experiments/results/full_metrics/`, `reports/figures/models/01-09`.
+
+## D-014: Bayesian hyperparameter optimisation (HistGradientBoosting)
+- **Date:** 2026-11-18
+- **Owner:** C
+- **Status:** Accepted
+- **Search:** Optuna TPE sampler (seed 42), 20 trials, 231 s. Trial 0 is the untuned default.
+- **Space:** learning_rate log-uniform [0.02, 0.3]; max_iter [100, 500] step 50; max_leaf_nodes [15, 127] log; min_samples_leaf [10, 200] log; l2_regularization log-uniform [0.001, 10].
+- **Objective:** mean macro-F1, GroupKFold(3) by trip, on a fixed 600k-row sample of the training rows. Student-test and evaluator data were not used in the search.
+- **Best:** learning_rate 0.104, max_iter 150, max_leaf_nodes 17, min_samples_leaf 172, l2_regularization 7.29. These settings give smaller, more regularised trees.
+- **Tuned vs untuned (both refit on all training rows; full GroupKFold(5) CV; same student-test trips):**
+
+| | CV macro-F1 | CV log loss | CV top-1 | Student top-1 | Student macro-F1 | Student log loss | Fit s | Inference ms / 1k rows |
+|---|---|---|---|---|---|---|---|---|
+| Untuned | 0.8813 | 0.1087 | 0.8032 | 0.8038 | 0.8869 | 0.0991 | 6.1 | 1.9 |
+| Tuned | 0.8814 | 0.1080 | 0.8036 | 0.8043 | 0.8868 | 0.0988 | 7.6 | 2.9 |
+
+- **Conclusion:** the tuned model is marginally better on every measure except student macro-F1, which is equal. The gains are far smaller than the fold standard deviation (about 0.023), so the model is insensitive to these hyperparameters; feature quality (D-009) and decoding (D-012) matter much more. The tuned model is kept as the final classifier: `artifacts/final_hgb_tuned.joblib`.
+- **Caveat:** the per-point top-1 values recorded inside the search (about 0.38) are not meaningful, because the row sample keeps only part of each point's candidate set. The search optimised macro-F1, which is unaffected. All top-1 figures above come from the full data.
+- **Evidence:** `experiments/results/bayes/`, `reports/figures/models/10_bayes_history.png`, `11_tuned_vs_untuned.png`.
+
+## D-015: HMM rerun with the tuned classifier
+- **Date:** 2026-11-18
+- **Owner:** C
+- **Status:** Accepted. Updates the D-012 figures.
+- **Student-test results with the tuned model:** classifier-only top-1 0.804, continuity 0.900, route F1 0.803. HMM default 0.880 / 0.975 / 0.901. HMM best grid (beta 4, disconnect 10, U-turn 3) 0.914 / 0.981 / 0.938. The same decoder settings are best as in D-012.
+- **Evidence:** `experiments/results/hmm_student_test.csv`, `reports/figures/models/12_hmm_vs_classifier.png`.
+
 ---
 
 ## Change history
@@ -89,3 +225,7 @@ Rules:
 | 2026-11-18 | D-001 to D-006 | Initial log created |
 | 2026-11-18 | D-001, D-002, D-003 | Team chose B, A and A. Status set to Accepted. Numeric thresholds still to confirm on train. |
 | 2026-11-18 | D-001, D-004, D-007 | D-001 superseded by D-007 (fixed 50 m). D-004 superseded for candidate generation by per-trip UTM. D-005 marked provisional, with the tile issue recorded. |
+| 2026-11-18 | D-008, D-009, D-010 | Model family selected (HistGradientBoosting, CV only). Feature set reduced from 9 to 5. Final student-test result recorded. |
+| 2026-11-18 | D-011 | Phase 1 model kept over Person B model (top-1 0.803 vs 0.524). Person B Optuna setup to be rerun on the 5-feature set. |
+| 2026-11-18 | D-012 | HMM/Viterbi decoder built. Student-test top-1 0.803 -> 0.915 (decoder settings tuned on student-test, disclosed). |
+| 2026-11-18 | D-013, D-014, D-015 | Full metrics for all 5 models on the 5-feature set. Optuna tuning done (marginal gain; tuned model kept). HMM rerun with tuned model: top-1 0.914. |
