@@ -1,0 +1,15 @@
+numpy
+pandas
+scipy
+scikit-learn
+shapely
+pyproj
+rtree
+matplotlib
+folium
+optuna
+joblib
+fastapi
+uvicorn[standard]
+pydantic
+pytest
