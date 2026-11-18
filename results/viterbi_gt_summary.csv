@@ -1,0 +1,5 @@
+method,beta,trips,mean_accuracy_pct,mean_candidate_miss_pct
+Greedy,,10,82.6541547347552,0.0
+Viterbi,10.0,10,83.86754547804281,0.0
+Viterbi,25.0,10,84.74638093045472,0.0
+Viterbi,50.0,10,84.99917049276016,0.0

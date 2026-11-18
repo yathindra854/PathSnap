@@ -1,0 +1,27 @@
+PATHSNAP EXPERIMENTAL GREEDY VS VITERBI
+Trip: 00000000
+GPS points: 2503
+
+GREEDY:
+Network reachability: 99.44%
+Reachable transitions: 2488
+Unreachable transitions: 14
+Mean shortest-path hops: 1.57
+Maximum shortest-path hops: 15.0
+Transitions >5 hops: 167
+Transitions >10 hops: 45
+
+VITERBI:
+Network reachability: 100.00%
+Reachable transitions: 2502
+Unreachable transitions: 0
+Mean shortest-path hops: 1.49
+Maximum shortest-path hops: 15.0
+Transitions >5 hops: 148
+Transitions >10 hops: 41
+
+FILES SAVED:
+results/greedy_route.csv
+results/viterbi_route.csv
+results/greedy_vs_viterbi_metrics.csv
+results/experimental_viterbi_summary.txt

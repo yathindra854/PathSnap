@@ -1,0 +1,2 @@
+trips_evaluated,n_points,labelled_points,labelled_pct,top1_accuracy_pct,candidate_miss_rate_pct,mean_label_alignment_distance_m
+10,1916.0,1884.6,98.12144520018416,82.65415473475521,0.0,7.007998716316408

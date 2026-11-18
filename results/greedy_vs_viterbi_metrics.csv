@@ -1,0 +1,3 @@
+method,transitions,reachable,unreachable,reachability_pct,mean_hops,max_hops,hops_gt5,hops_gt10,road_switches,unique_arcs,mean_snap_distance_m,median_snap_distance_m,max_snap_distance_m
+Greedy,2502,2488,14,99.4404476418865,1.5711414790996785,15.0,167,45,345,235,6.700658479731481,5.681522869840019,35.9985767074655
+Viterbi,2502,2502,0,100.0,1.4872102318145484,15.0,148,41,281,210,6.922707858031808,5.898983917409279,35.99857670763223
