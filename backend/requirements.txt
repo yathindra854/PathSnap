@@ -1,4 +1,9 @@
 fastapi
 uvicorn[standard]
-pydantic
-python-multipart
+pydantic>=2
+numpy
+pandas
+shapely>=2
+pyproj
+joblib
+scikit-learn==1.7.2

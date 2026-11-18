@@ -217,6 +217,17 @@ Rules:
 - **Student-test results with the tuned model:** classifier-only top-1 0.804, continuity 0.900, route F1 0.803. HMM default 0.880 / 0.975 / 0.901. HMM best grid (beta 4, disconnect 10, U-turn 3) 0.914 / 0.981 / 0.938. The same decoder settings are best as in D-012.
 - **Evidence:** `experiments/results/hmm_student_test.csv`, `reports/figures/models/12_hmm_vs_classifier.png`.
 
+## D-016: API design (Laptop 1)
+- **Date:** 2026-11-18
+- **Owner:** D
+- **Status:** Accepted
+- **Choice:** FastAPI app in `backend/app`, run with `uvicorn backend.app.main:app --host 0.0.0.0 --port 8000`. The UI sends only a trip ID (`POST /api/v1/predict`); the trip list comes from `GET /api/v1/trips`.
+- **Pipeline:** the same code as training. Feature computation moved to `src/pathsnap/features/engineering.py` and is now shared by `scripts/03a_features.py` and the API; the student-test feature table is byte-identical before and after the move.
+- **Ground truth:** the reference route is removed from the trip before projection, candidates, features, classifier and decoder. It is used only afterwards to compute metrics on Laptop 1. Responses contain metrics only, never the reference arcs or labels.
+- **Display:** where the decoder moves between non-adjacent arcs, the connecting arcs (shortest directed path, at most 6 hops) are filled in for drawing only. Metrics use the decoded arcs. Route ends are trimmed to the first and last snapped GPS points.
+- **Verification:** all 10 student-test trips through the API give pooled point accuracy 0.9136 (HMM) and 0.8043 (classifier only), identical to `scripts/05_decode_hmm.py`. Each trip takes 0.06 to 0.8 s. Unknown trip IDs return 404.
+- **Logging:** each request prints the caller IP, trip ID, accuracy, continuity and time in the uvicorn terminal, for the evaluators.
+
 ---
 
 ## Change history
@@ -229,3 +240,4 @@ Rules:
 | 2026-11-18 | D-011 | Phase 1 model kept over Person B model (top-1 0.803 vs 0.524). Person B Optuna setup to be rerun on the 5-feature set. |
 | 2026-11-18 | D-012 | HMM/Viterbi decoder built. Student-test top-1 0.803 -> 0.915 (decoder settings tuned on student-test, disclosed). |
 | 2026-11-18 | D-013, D-014, D-015 | Full metrics for all 5 models on the 5-feature set. Optuna tuning done (marginal gain; tuned model kept). HMM rerun with tuned model: top-1 0.914. |
+| 2026-11-18 | D-016 | API built on the real pipeline; shared feature module; verified on all 10 student-test trips. |
