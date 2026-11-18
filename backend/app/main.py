@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timezone
 from backend.app.routes.predict import router as prediction_router
@@ -12,11 +12,8 @@ app = FastAPI(
 # Allow the React frontend to communicate with the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -47,9 +44,12 @@ def health_check():
 def system_status():
     return {
         "system": "PathSnap",
-        "stage": "integration development",
-        "inference_ready": False,
-        "model_loaded": False,
-        "decoder_connected": False,
-        "prediction_endpoint": "mock"
+        "stage": "real inference integrated",
+        "inference_ready": True,
+        "model_loaded": True,
+        "decoder_connected": True,
+        "prediction_endpoint": "hgb_viterbi"
     }
+
+
+
