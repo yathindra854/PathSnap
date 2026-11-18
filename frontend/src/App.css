@@ -1,0 +1,46 @@
+/* REAL LEAFLET MAP */
+
+.map-container {
+  height: 380px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 11px;
+  border: 1px solid #27303d;
+  background: #101721;
+}
+
+.leaflet-map {
+  height: 100%;
+  width: 100%;
+  background: #101721;
+}
+
+.leaflet-container {
+  font-family: "DM Sans", sans-serif;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #151b27;
+  color: #e8eaf2;
+}
+
+.leaflet-popup-content {
+  line-height: 1.7;
+}
+
+.leaflet-control-zoom a {
+  background: #151b27 !important;
+  color: #e8eaf2 !important;
+  border-color: #30394a !important;
+}
+
+.spin {
+  animation: pathsnap-spin 1s linear infinite;
+}
+
+@keyframes pathsnap-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
