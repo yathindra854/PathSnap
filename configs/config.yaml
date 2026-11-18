@@ -8,8 +8,9 @@ data:
     evaluator_test_trips: 10   # never used for training, tuning or selection
 
 candidates:
-  radius_m: null        # TODO: decide in Phase 0
-  crs: null             # TODO: per-trip UTM zone (see Dataset Exploration §5)
+  radius_m: 50          # v0; to be confirmed with the R sweep (30/50/75/100)
+  crs: per_trip_utm     # trips are in different cities; UTM zone from each trip's mean lon/lat
+  label_window: 5       # route look-ahead for label alignment
 
 cv:
   scheme: GroupKFold    # group by trip_id to prevent leakage
