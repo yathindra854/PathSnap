@@ -21,6 +21,7 @@ COLORS = {
     "gps": "#1f77b4",
     "reference": "#2ca02c",
     "predicted": "#d62728",
+    "classifier": "#ff7f0e",
 }
 
 
@@ -55,9 +56,23 @@ def _legend(items: dict) -> folium.Element:
     return folium.Element(html)
 
 
+def _collapse(arcs):
+    """Per-point arc predictions -> ordered arc list without consecutive repeats."""
+    arcs = np.asarray([a for a in arcs if a is not None and a >= 0])
+    if len(arcs):
+        arcs = arcs[np.r_[True, arcs[1:] != arcs[:-1]]]
+    return arcs
+
+
 def make_map(trip: Trip, predicted_arcs=None, max_gps_points: int = 3000,
-             show_network: bool = True) -> folium.Map:
-    """Interactive map of one trip with toggleable layers."""
+             show_network: bool = True, classifier_arcs=None,
+             predicted_name: str = "Predicted route") -> folium.Map:
+    """Interactive map of one trip with toggleable layers.
+
+    predicted_arcs : per-point (or ordered) arc ids of the final prediction (HMM)
+    classifier_arcs: optional per-point arc ids of the classifier-only prediction,
+                     drawn as a second layer (hidden by default) for comparison
+    """
     tr = trip.track
     m = folium.Map(tiles=None, control_scale=True)
     folium.TileLayer(
@@ -85,17 +100,19 @@ def make_map(trip: Trip, predicted_arcs=None, max_gps_points: int = 3000,
         ref.add_to(m)
         legend["Reference route"] = COLORS["reference"]
 
+    if classifier_arcs is not None:
+        clf = folium.FeatureGroup(name="Classifier only (no HMM)", show=False)
+        folium.PolyLine(_arc_lines(trip, _collapse(classifier_arcs)), color=COLORS["classifier"],
+                        weight=3, opacity=0.9, dash_array="2 6").add_to(clf)
+        clf.add_to(m)
+        legend["Classifier only (no HMM)"] = COLORS["classifier"]
+
     if predicted_arcs is not None:
-        # collapse consecutive repeats: per-point predictions -> ordered arc list
-        arcs = np.asarray(predicted_arcs)
-        arcs = arcs[arcs >= 0]
-        if len(arcs):
-            arcs = arcs[np.r_[True, arcs[1:] != arcs[:-1]]]
-        pred = folium.FeatureGroup(name="Predicted route", show=True)
-        folium.PolyLine(_arc_lines(trip, arcs), color=COLORS["predicted"],
+        pred = folium.FeatureGroup(name=predicted_name, show=True)
+        folium.PolyLine(_arc_lines(trip, _collapse(predicted_arcs)), color=COLORS["predicted"],
                         weight=3, opacity=0.9, dash_array="6 4").add_to(pred)
         pred.add_to(m)
-        legend["Predicted route"] = COLORS["predicted"]
+        legend[predicted_name] = COLORS["predicted"]
 
     # GPS points last so they sit on top; subsample very long trips
     step = max(1, len(tr) // max_gps_points)
